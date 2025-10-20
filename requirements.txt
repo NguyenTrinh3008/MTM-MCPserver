@@ -1,0 +1,12 @@
+# FastMCP 2.0 Server Requirements
+fastmcp>=2.12.0
+httpx>=0.25.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# NEW: Required for FastMCP.from_fastapi() auto-conversion
+fastapi>=0.115.0
+uvicorn>=0.24.0  # For running FastAPI apps
+
+# Optional: For advanced features
+# pytest>=7.4.0  # For testing
