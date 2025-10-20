@@ -1,35 +1,65 @@
 # FastMCP 2.0 Server - ZepAI Memory Layer
 
-Migration từ custom MCP implementation sang [FastMCP 2.0](https://github.com/jlowin/fastmcp)
+Auto-generated MCP server từ FastAPI backend sử dụng [FastMCP 2.0](https://github.com/jlowin/fastmcp)
+
+## 🏗️ **Architecture**
+
+Server này sử dụng `FastMCP.from_fastapi()` để tự động convert tất cả endpoints từ FastAPI app (`memory_layer`) thành MCP tools và resources.
+
+**Key Components:**
+- **`server_http.py`** - Main MCP server file, auto-generates tools từ FastAPI endpoints
+- **`memory_layer/`** - FastAPI backend (required dependency, not included in this repo)
+- **`config.py`** - Configuration settings
+- **`test/`** - Test suite and examples
 
 ## 🚀 **Features**
 
-### **8 Core MCP Tools (Auto-generated from FastAPI):**
+### **Auto-generated MCP Tools:**
 
-**🔍 Search Tools (2):**
-- `search` - Semantic search với reranking strategies (supports LLM classification via `use_llm_classification=true`)
+All tools are **automatically generated** from FastAPI POST endpoints:
+
+**🔍 Search Tools:**
+- `search` - Semantic search với reranking strategies
 - `search_code` - Search code changes với metadata filters
 
-**📥 Ingest Tools (6):**
+**📥 Ingest Tools:**
 - `ingest_text` - Ingest plain text vào knowledge graph
 - `ingest_message` - Ingest conversation messages
 - `ingest_json` - Ingest structured JSON data
-- `ingest_code` - Ingest simple code change với LLM importance scoring
-- `ingest_code_context` - Ingest advanced code metadata với TTL + relationships
-- `ingest_conversation` - Ingest full conversation context (at `/conversation/ingest`)
+- `ingest_code` - Ingest code changes với LLM importance scoring
+- `ingest_code_context` - Ingest advanced code metadata với TTL
+- `ingest_conversation` - Ingest full conversation context
 
-**📊 Admin & Analytics:**
-- All admin tools are auto-generated from FastAPI GET endpoints (Resources)
-- Cache management, stats, debugging endpoints available via MCP resources
+**📊 Admin Tools (Read-only):**
+- Admin **POST** endpoints are **filtered out** for safety
+- Only **GET** endpoints are exposed as MCP Resources
+- Includes: stats, cache info, health checks
 
-### **7 MCP Resources:**
-- `memory://conversations/{project_id}` - Conversation memories
-- `memory://stats/{project_id}` - Project statistics
+### **Auto-generated MCP Resources:**
+
+All GET endpoints with path parameters become Resource Templates:
 
 ## 📦 **Installation**
 
+### **Prerequisites:**
+
+1. **memory_layer** FastAPI backend phải running tại `http://localhost:8000`
+2. Folder structure:
+   ```
+   ZepAI/
+   ├── memory_layer/          # FastAPI backend (required)
+   │   └── app/
+   │       └── main.py        # Contains FastAPI app
+   └── fastmcp_server/        # This repository
+       ├── server_http.py
+       ├── config.py
+       └── requirements.txt
+   ```
+
+### **Install Dependencies:**
+
 ```bash
-# Install dependencies
+cd fastmcp_server
 pip install -r requirements.txt
 
 # Or with uv
@@ -38,11 +68,14 @@ uv pip install -r requirements.txt
 
 ## ⚙️ **Configuration**
 
-Create `.env` file:
+Create `.env` file (optional, có defaults):
 
 ```env
+# Memory Layer Backend URL
 MEMORY_LAYER_URL=http://localhost:8000
 MEMORY_LAYER_TIMEOUT=30
+
+# Default Settings
 DEFAULT_PROJECT_ID=default_project
 MAX_SEARCH_RESULTS=50
 MAX_TEXT_LENGTH=100000
@@ -51,35 +84,54 @@ MAX_CONVERSATION_MESSAGES=100
 
 ## 🏃 **Running the Server**
 
-### **HTTP Transport (Default):**
+### **1. Start memory_layer backend first:**
 ```bash
-python server.py
+cd ../memory_layer
+python -m uvicorn app.main:app --port 8000
 ```
 
-Server will run on `http://localhost:8001`
-
-### **Stdio Transport:**
-```python
-# In server.py, change:
-mcp.run(transport="stdio")
-```
-
-### **With FastMCP CLI:**
+### **2. Start MCP server:**
 ```bash
-fastmcp run server.py
+cd ../fastmcp_server
+python server_http.py
 ```
+
+Server will run on `http://localhost:8002`
 
 ## 📡 **Available Endpoints**
 
-When running with HTTP transport:
+Combined FastAPI + MCP routes:
 
-- `GET /health` - Health check
-- `POST /mcp/tools/call` - Call MCP tools
-- `GET /mcp/tools/list` - List available tools
-- `POST /mcp/resources/read` - Read MCP resources
-- `GET /mcp/resources/list` - List available resources
+**MCP Endpoints (at /mcp):**
+- `GET /mcp/sse` - Server-Sent Events connection
+- `POST /mcp/messages` - MCP message endpoint
+- MCP Client connection: `http://localhost:8002/mcp`
+
+**Original FastAPI Routes:**
+- `GET /docs` - OpenAPI documentation
+- `GET /` - API root and health check
+- All original endpoints from memory_layer
+
+**Key MCP Paths:**
+- Tools list: Call via MCP client
+- Resources list: Call via MCP client
+- Test connection: `curl http://localhost:8002/mcp/sse`
 
 ## 🧪 **Testing**
+
+### **Run Test Suite:**
+
+```bash
+cd test
+python test_client.py
+```
+
+Test suite includes:
+- Basic functionality tests
+- Tool calling tests
+- Resource reading tests
+- Search and ingest workflows
+- Comprehensive scenario tests
 
 ### **Using FastMCP Client:**
 
@@ -89,12 +141,16 @@ import asyncio
 
 async def test():
     # Connect to server
-    async with Client("http://localhost:8001/mcp") as client:
+    async with Client("http://localhost:8002/mcp") as client:
         # List tools
         tools = await client.list_tools()
         print(f"Available tools: {[t.name for t in tools]}")
         
-        # Call a tool
+        # List resources
+        resources = await client.list_resources()
+        print(f"Available resources: {[r.uri for r in resources]}")
+        
+        # Call a tool (auto-generated from FastAPI)
         result = await client.call_tool("ingest_text", {
             "text": "Test content",
             "project_id": "test_project"
@@ -108,83 +164,102 @@ if __name__ == "__main__":
 ### **Using curl:**
 
 ```bash
-# List tools
-curl http://localhost:8001/mcp/tools/list
+# Test SSE connection
+curl http://localhost:8002/mcp/sse
 
-# Call tool
-curl -X POST http://localhost:8001/mcp/tools/call \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "search_knowledge",
-    "arguments": {
-      "query": "async performance",
-      "project_id": "test_project",
-      "limit": 5
-    }
-  }'
+# Access FastAPI docs
+curl http://localhost:8002/docs
 ```
 
 ## 📊 **Comparison: FastMCP vs Custom Implementation**
 
-| Aspect | Custom MCP | FastMCP 2.0 (Consolidated) |
+| Aspect | Custom MCP | FastMCP 2.0 (Auto-generated) |
 |--------|-----------|-------------|
-| **Lines of Code** | ~2,900 | ~540 (81% reduction) |
-| **Setup Time** | 5 weeks | 3 days |
-| **Core Tools** | 11 (with wrappers) | 8 (auto-generated only) |
-| **Tools Registration** | Manual (254 lines) | Auto-conversion (0 lines) |
-| **Validation** | Manual Pydantic | Automatic |
-| **Transport** | Custom HTTP+SSE | Built-in HTTP/SSE/Stdio |
+| **Lines of Code** | ~2,900 | ~180 (94% reduction) |
+| **Setup Time** | 5 weeks | 1 day |
+| **Tools Definition** | Manual (11 tools) | Auto-generated from FastAPI |
+| **Tools Registration** | Manual (254 lines) | Automatic via `from_fastapi()` |
+| **Validation** | Manual Pydantic | Inherits from FastAPI |
+| **Transport** | Custom HTTP+SSE | Built-in HTTP/SSE |
 | **Error Handling** | Manual | Automatic |
-| **Testing** | Custom client | Built-in utilities |
-| **Deployment** | Complex | Simple |
+| **Testing** | Custom client | FastMCP Client + test suite |
+| **Maintenance** | Update 2 places | Update FastAPI only |
+| **Deployment** | Complex | `python server_http.py` |
 
-## 🔄 **Migration Notes**
+## 🔄 **How It Works**
 
-### **What Changed:**
+### **Auto-conversion Process:**
 
-1. **No Transport Layer** - FastMCP handles it automatically
-2. **No Manual Registration** - Use `@mcp.tool()` decorator (or auto-conversion via `FastMCP.from_fastapi()`)
-3. **No Custom Validators** - Type hints = validation
-4. **No HTTP Endpoints** - FastMCP creates them automatically
-5. **Simpler Error Handling** - Return strings, FastMCP formats errors
-6. **No Custom Wrapper Tools** - Removed `smart_search` and `quick_code_search`:
-   - Use `search` with `use_llm_classification=true` instead of `smart_search`
-   - Use `search_code` directly instead of `quick_code_search`
-7. **Consolidated Endpoints** - Removed duplicate `/ingest/conversation`, use `/conversation/ingest`
+```python
+# 1. Import FastAPI app from memory_layer
+from app.main import app as fastapi_app
 
-### **What Stayed the Same:**
+# 2. Filter routes (exclude admin POST endpoints)
+filtered_routes = [route for route in fastapi_app.routes 
+                   if should_include_route(route)]
 
-1. **Memory Client** - Same HTTP client logic
-2. **Business Logic** - Same tool implementations
-3. **Backend Communication** - Same endpoints
-4. **Configuration** - Similar config structure
+# 3. Auto-convert to MCP server
+mcp = FastMCP.from_fastapi(
+    app=filtered_app,
+    name="ZepAI Memory Layer",
+    route_maps=custom_route_maps  # GET with params → Resources
+)
 
-## 🚀 **Next Steps**
+# 4. Combine MCP + original FastAPI routes
+combined_app = FastAPI(
+    routes=[
+        *mcp_app.routes,      # MCP at /mcp/*
+        *fastapi_app.routes,  # Original API
+    ]
+)
+```
 
-1. **Add Authentication:**
-   ```python
-   from fastmcp.server.auth import GoogleProvider
-   
-   auth = GoogleProvider(
-       client_id="...",
-       client_secret="...",
-       base_url="https://myserver.com"
-   )
-   mcp = FastMCP("Protected Server", auth=auth)
-   ```
+### **Route Mapping Rules:**
 
-2. **Deploy to FastMCP Cloud:**
-   ```bash
-   fastmcp deploy server.py
-   ```
+1. **POST/PUT/DELETE** → MCP Tools (writable operations)
+2. **GET with `{params}`** → MCP Resource Templates (dynamic data)
+3. **GET without params** → MCP Resources (static data)
+4. **Admin POST endpoints** → Filtered out (safety)
 
-3. **Add More Resources:**
-   ```python
-   @mcp.resource("memory://code/{project_id}")
-   async def code_memories(project_id: str):
-       # Implementation
-       pass
-   ```
+### **Benefits:**
+
+✅ **Single source of truth** - Update FastAPI, MCP updates automatically  
+✅ **No code duplication** - Tools inherit FastAPI validation  
+✅ **Type safety** - Pydantic models from FastAPI = MCP schemas  
+✅ **Zero maintenance** - Add new FastAPI endpoint = new MCP tool automatically  
+✅ **Combined access** - Use via MCP client OR direct HTTP/OpenAPI
+
+## 🎯 **Key Design Decisions**
+
+### **1. Why Auto-generation?**
+- **DRY principle** - FastAPI already defines all endpoints, schemas, validation
+- **Zero maintenance** - No manual tool registration needed
+- **Type safety** - Inherits Pydantic validation from FastAPI
+
+### **2. Why Filter Admin Endpoints?**
+- **Safety** - Prevent accidental cache clearing via MCP client
+- **Read-only monitoring** - Admin GET endpoints still exposed as resources
+- **Explicit control** - Destructive operations require direct API access
+
+### **3. Why Combined Routes?**
+- **Flexibility** - Access via MCP client OR OpenAPI/Swagger
+- **Debugging** - Use `/docs` for quick endpoint testing
+- **Migration path** - Existing API clients continue working
+
+### **4. File Structure:**
+```
+fastmcp_server/
+├── server_http.py              # Main server (180 lines)
+├── config.py                   # Configuration
+├── memory_client.py            # Legacy (not used anymore)
+├── search_results_formatter.py # Result formatting utilities
+├── requirements.txt            # Dependencies
+├── .env                        # Environment config (gitignored)
+└── test/                       # Test suite
+    ├── test_client.py          # Basic tests
+    ├── test_comprehensive_scenarios.py
+    └── test_search_analysis.py
+```
 
 ## 📖 **Documentation**
 
@@ -192,19 +267,30 @@ curl -X POST http://localhost:8001/mcp/tools/call \
 - [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)
 - [FastMCP GitHub](https://github.com/jlowin/fastmcp)
 
-## 🎯 **Benefits of FastMCP**
+## 🎯 **Benefits of This Approach**
 
-✅ **80% less code** - Focus on business logic  
-✅ **Faster development** - 3 days vs 5 weeks  
-✅ **Built-in HTTP** - No manual transport implementation  
-✅ **Automatic validation** - Type hints = validation  
-✅ **Better testing** - Built-in test utilities  
-✅ **Easy deployment** - One command  
-✅ **Production ready** - Battle-tested library  
-✅ **Community support** - Active development  
+✅ **94% less code** - 180 lines vs 2,900 lines  
+✅ **Zero tool registration** - Auto-generated from FastAPI  
+✅ **Single source of truth** - Update FastAPI once  
+✅ **Type-safe** - Inherits Pydantic validation  
+✅ **Dual access** - MCP client OR OpenAPI/Swagger  
+✅ **Easy testing** - Built-in test utilities + `/docs`  
+✅ **Safe by default** - Admin operations filtered  
+✅ **Future-proof** - New FastAPI endpoints = new MCP tools automatically  
+
+## 🔗 **Links**
+
+- [FastMCP Documentation](https://gofastmcp.com)
+- [FastMCP GitHub](https://github.com/jlowin/fastmcp)
+- [MCP Protocol Specification](https://spec.modelcontextprotocol.io/)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
 
 ## 📝 **License**
 
 Same as original project.
+
+---
+
+**Note:** This server requires the `memory_layer` FastAPI backend to be running. The MCP server acts as a protocol adapter, exposing FastAPI endpoints as MCP tools and resources.
 
 
